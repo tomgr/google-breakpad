@@ -1,0 +1,148 @@
+
+# /
+/autom4te.cache
+
+# /src/
+/src/.dirstamp
+
+# /src/client/
+/src/client/.deps
+/src/client/.dirstamp
+
+# /src/client/linux/
+/src/client/linux/.deps
+/src/client/linux/.dirstamp
+
+# /src/client/linux/crash_generation/
+/src/client/linux/crash_generation/.deps
+/src/client/linux/crash_generation/.dirstamp
+
+# /src/client/linux/handler/
+/src/client/linux/handler/.deps
+/src/client/linux/handler/.dirstamp
+
+# /src/client/linux/minidump_writer/
+/src/client/linux/minidump_writer/.deps
+/src/client/linux/minidump_writer/.dirstamp
+
+# /src/client/mac/Breakpad.xcodeproj/
+/src/client/mac/Breakpad.xcodeproj/*.mode1v3
+/src/client/mac/Breakpad.xcodeproj/*.pbxuser
+
+# /src/client/windows/
+/src/client/windows/*.sln
+/src/client/windows/*.vcproj
+/src/client/windows/*.user
+/src/client/windows/*.suo
+/src/client/windows/*.ncb
+/src/client/windows/Debug
+/src/client/windows/Default
+/src/client/windows/Release
+
+# /src/client/windows/build/
+/src/client/windows/build/*.sln
+/src/client/windows/build/*.vcproj
+/src/client/windows/build/*.user
+/src/client/windows/build/*.suo
+/src/client/windows/build/*.ncb
+/src/client/windows/build/Debug
+/src/client/windows/build/Default
+/src/client/windows/build/Release
+
+# /src/client/windows/common/
+/src/client/windows/common/*.sln
+/src/client/windows/common/*.vcproj
+/src/client/windows/common/*.user
+/src/client/windows/common/*.suo
+/src/client/windows/common/*.ncb
+/src/client/windows/common/Debug
+/src/client/windows/common/Default
+/src/client/windows/common/Release
+
+# /src/client/windows/crash_generation/
+/src/client/windows/crash_generation/*.sln
+/src/client/windows/crash_generation/*.vcproj
+/src/client/windows/crash_generation/*.user
+/src/client/windows/crash_generation/*.suo
+/src/client/windows/crash_generation/*.ncb
+/src/client/windows/crash_generation/Debug
+/src/client/windows/crash_generation/Default
+/src/client/windows/crash_generation/Release
+
+# /src/client/windows/handler/
+/src/client/windows/handler/*.sln
+/src/client/windows/handler/*.vcproj
+/src/client/windows/handler/*.user
+/src/client/windows/handler/*.suo
+/src/client/windows/handler/*.ncb
+/src/client/windows/handler/Debug
+/src/client/windows/handler/Default
+/src/client/windows/handler/Release
+
+# /src/client/windows/sender/
+/src/client/windows/sender/*.sln
+/src/client/windows/sender/*.vcproj
+/src/client/windows/sender/*.user
+/src/client/windows/sender/*.suo
+/src/client/windows/sender/*.ncb
+/src/client/windows/sender/Debug
+/src/client/windows/sender/Default
+/src/client/windows/sender/Release
+
+# /src/client/windows/tests/
+/src/client/windows/tests/*.sln
+/src/client/windows/tests/*.vcproj
+/src/client/windows/tests/*.user
+/src/client/windows/tests/*.suo
+/src/client/windows/tests/*.ncb
+/src/client/windows/tests/Debug
+/src/client/windows/tests/Default
+/src/client/windows/tests/Release
+
+# /src/client/windows/unittests/
+/src/client/windows/unittests/*.sln
+/src/client/windows/unittests/*.vcproj
+/src/client/windows/unittests/*.user
+/src/client/windows/unittests/*.suo
+/src/client/windows/unittests/*.ncb
+/src/client/windows/unittests/Debug
+/src/client/windows/unittests/Default
+/src/client/windows/unittests/Release
+
+# /src/common/
+/src/common/.deps
+/src/common/.dirstamp
+
+# /src/common/dwarf/
+/src/common/dwarf/.deps
+/src/common/dwarf/.dirstamp
+
+# /src/common/linux/
+/src/common/linux/.deps
+/src/common/linux/.dirstamp
+
+# /src/processor/
+/src/processor/.deps
+/src/processor/.dirstamp
+
+# /src/third_party/
+
+# /src/third_party/libdisasm/
+/src/third_party/libdisasm/.deps
+/src/third_party/libdisasm/.dirstamp
+
+# /src/third_party/protobuf/
+
+# /src/tools/
+
+# /src/tools/linux/dump_syms/
+/src/tools/linux/dump_syms/.dirstamp
+/src/tools/linux/dump_syms/.deps
+
+# /src/tools/linux/md2core/
+/src/tools/linux/md2core/.dirstamp
+/src/tools/linux/md2core/.deps
+
+# /src/tools/linux/symupload/
+/src/tools/linux/symupload/.dirstamp
+/src/tools/linux/symupload/.deps
