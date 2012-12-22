@@ -60,8 +60,8 @@ const int kGUIDStringSize = 37;
 
 void sigchld_handler(int signo) { }
 
-int CreateTMPFile(const std::string& dir, std::string* path) {
-  std::string file = dir + "/exception-handler-unittest.XXXXXX";
+int CreateTMPFile(const string& dir, string* path) {
+  string file = dir + "/exception-handler-unittest.XXXXXX";
   const char* c_file = file.c_str();
   // Copy that string, mkstemp needs a C string it can modify.
   char* c_path = strdup(c_file);
@@ -98,7 +98,7 @@ void WaitForProcessToTerminate(pid_t process_id, int expected_status) {
 }
 
 // Reads the minidump path sent over the pipe |fd| and sets it in |path|.
-void ReadMinidumpPathFromPipe(int fd, std::string* path) {
+void ReadMinidumpPathFromPipe(int fd, string* path) {
   struct pollfd pfd;
   memset(&pfd, 0, sizeof(pfd));
   pfd.fd = fd;
@@ -108,9 +108,9 @@ void ReadMinidumpPathFromPipe(int fd, std::string* path) {
   ASSERT_EQ(1, r);
   ASSERT_TRUE(pfd.revents & POLLIN);
 
-  uint32_t len;
+  int32_t len;
   ASSERT_EQ(static_cast<ssize_t>(sizeof(len)), read(fd, &len, sizeof(len)));
-  ASSERT_LT(len, static_cast<uint32_t>(2048));
+  ASSERT_LT(len, 2048);
   char* filename = static_cast<char*>(malloc(len + 1));
   ASSERT_EQ(len, read(fd, filename, len));
   filename[len] = 0;
@@ -125,11 +125,15 @@ TEST(ExceptionHandlerTest, SimpleWithPath) {
   AutoTempDir temp_dir;
   ExceptionHandler handler(
       MinidumpDescriptor(temp_dir.path()), NULL, NULL, NULL, true, -1);
+  EXPECT_EQ(temp_dir.path(), handler.minidump_descriptor().directory());
+  string temp_subdir = temp_dir.path() + "/subdir";
+  handler.set_minidump_descriptor(MinidumpDescriptor(temp_subdir));
+  EXPECT_EQ(temp_subdir, handler.minidump_descriptor().directory());
 }
 
 TEST(ExceptionHandlerTest, SimpleWithFD) {
   AutoTempDir temp_dir;
-  std::string path;
+  string path;
   const int fd = CreateTMPFile(temp_dir.path(), &path);
   ExceptionHandler handler(MinidumpDescriptor(fd), NULL, NULL, NULL, true, -1);
   close(fd);
@@ -155,7 +159,7 @@ void ChildCrash(bool use_fd) {
   AutoTempDir temp_dir;
   int fds[2] = {0};
   int minidump_fd = -1;
-  std::string minidump_path;
+  string minidump_path;
   if (use_fd) {
     minidump_fd = CreateTMPFile(temp_dir.path(), &minidump_path);
   } else {
@@ -165,7 +169,7 @@ void ChildCrash(bool use_fd) {
   const pid_t child = fork();
   if (child == 0) {
     {
-      scoped_ptr<ExceptionHandler> handler;
+      google_breakpad::scoped_ptr<ExceptionHandler> handler;
       if (use_fd) {
         handler.reset(new ExceptionHandler(MinidumpDescriptor(minidump_fd),
                                            NULL, NULL, NULL, true, -1));
@@ -190,7 +194,7 @@ void ChildCrash(bool use_fd) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
   unlink(minidump_path.c_str());
 }
 
@@ -200,6 +204,214 @@ TEST(ExceptionHandlerTest, ChildCrashWithPath) {
 
 TEST(ExceptionHandlerTest, ChildCrashWithFD) {
   ASSERT_NO_FATAL_FAILURE(ChildCrash(true));
+}
+
+static bool DoneCallbackReturnFalse(const MinidumpDescriptor& descriptor,
+                                    void* context,
+                                    bool succeeded) {
+  return false;
+}
+
+static bool DoneCallbackReturnTrue(const MinidumpDescriptor& descriptor,
+                                   void* context,
+                                   bool succeeded) {
+  return true;
+}
+
+static bool DoneCallbackRaiseSIGKILL(const MinidumpDescriptor& descriptor,
+                                     void* context,
+                                     bool succeeded) {
+  raise(SIGKILL);
+  return true;
+}
+
+static bool FilterCallbackReturnFalse(void* context) {
+  return false;
+}
+
+static bool FilterCallbackReturnTrue(void* context) {
+  return true;
+}
+
+// SIGKILL cannot be blocked and a handler cannot be installed for it. In the
+// following tests, if the child dies with signal SIGKILL, then the signal was
+// redelivered to this handler. If the child dies with SIGSEGV then it wasn't.
+static void RaiseSIGKILL(int sig) {
+  raise(SIGKILL);
+}
+
+static bool InstallRaiseSIGKILL() {
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler = RaiseSIGKILL;
+  return sigaction(SIGSEGV, &sa, NULL) != -1;
+}
+
+static void CrashWithCallbacks(ExceptionHandler::FilterCallback filter,
+                               ExceptionHandler::MinidumpCallback done,
+                               string path) {
+  ExceptionHandler handler(
+      MinidumpDescriptor(path), filter, done, NULL, true, -1);
+  // Crash with the exception handler in scope.
+  *reinterpret_cast<volatile int*>(NULL) = 0;
+}
+
+TEST(ExceptionHandlerTest, RedeliveryOnFilterCallbackFalse) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    ASSERT_TRUE(InstallRaiseSIGKILL());
+    CrashWithCallbacks(FilterCallbackReturnFalse, NULL, temp_dir.path());
+  }
+
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
+}
+
+TEST(ExceptionHandlerTest, RedeliveryOnDoneCallbackFalse) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    ASSERT_TRUE(InstallRaiseSIGKILL());
+    CrashWithCallbacks(NULL, DoneCallbackReturnFalse, temp_dir.path());
+  }
+
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
+}
+
+TEST(ExceptionHandlerTest, NoRedeliveryOnDoneCallbackTrue) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    ASSERT_TRUE(InstallRaiseSIGKILL());
+    CrashWithCallbacks(NULL, DoneCallbackReturnTrue, temp_dir.path());
+  }
+
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
+}
+
+TEST(ExceptionHandlerTest, NoRedeliveryOnFilterCallbackTrue) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    ASSERT_TRUE(InstallRaiseSIGKILL());
+    CrashWithCallbacks(FilterCallbackReturnTrue, NULL, temp_dir.path());
+  }
+
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
+}
+
+TEST(ExceptionHandlerTest, RedeliveryToDefaultHandler) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    CrashWithCallbacks(FilterCallbackReturnFalse, NULL, temp_dir.path());
+  }
+
+  // As RaiseSIGKILL wasn't installed, the redelivery should just kill the child
+  // with SIGSEGV.
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
+}
+
+// Check that saving and restoring the signal handler with 'signal'
+// instead of 'sigaction' doesn't make the Breakpad signal handler
+// crash. See comments in ExceptionHandler::SignalHandler for full
+// details.
+TEST(ExceptionHandlerTest, RedeliveryOnBadSignalHandlerFlag) {
+  AutoTempDir temp_dir;
+  const pid_t child = fork();
+  if (child == 0) {
+    // Install the RaiseSIGKILL handler for SIGSEGV.
+    ASSERT_TRUE(InstallRaiseSIGKILL());
+
+    // Create a new exception handler, this installs a new SIGSEGV
+    // handler, after saving the old one.
+    ExceptionHandler handler(
+        MinidumpDescriptor(temp_dir.path()), NULL,
+        DoneCallbackReturnFalse, NULL, true, -1);
+
+    // Install the default SIGSEGV handler, saving the current one.
+    // Then re-install the current one with 'signal', this loses the
+    // SA_SIGINFO flag associated with the Breakpad handler.
+    sighandler_t old_handler = signal(SIGSEGV, SIG_DFL);
+    ASSERT_NE(reinterpret_cast<void*>(old_handler),
+              reinterpret_cast<void*>(SIG_ERR));
+    ASSERT_NE(reinterpret_cast<void*>(signal(SIGSEGV, old_handler)),
+              reinterpret_cast<void*>(SIG_ERR));
+
+    // Crash with the exception handler in scope.
+    *reinterpret_cast<volatile int*>(NULL) = 0;
+  }
+  // SIGKILL means Breakpad's signal handler didn't crash.
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
+}
+
+TEST(ExceptionHandlerTest, StackedHandlersDeliveredToTop) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    ExceptionHandler bottom(MinidumpDescriptor(temp_dir.path()),
+                            NULL,
+                            NULL,
+                            NULL,
+                            true,
+                            -1);
+    CrashWithCallbacks(NULL, DoneCallbackRaiseSIGKILL, temp_dir.path());
+  }
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
+}
+
+TEST(ExceptionHandlerTest, StackedHandlersNotDeliveredToBottom) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    ExceptionHandler bottom(MinidumpDescriptor(temp_dir.path()),
+                            NULL,
+                            DoneCallbackRaiseSIGKILL,
+                            NULL,
+                            true,
+                            -1);
+    CrashWithCallbacks(NULL, NULL, temp_dir.path());
+  }
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
+}
+
+TEST(ExceptionHandlerTest, StackedHandlersFilteredToBottom) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    ExceptionHandler bottom(MinidumpDescriptor(temp_dir.path()),
+                            NULL,
+                            DoneCallbackRaiseSIGKILL,
+                            NULL,
+                            true,
+                            -1);
+    CrashWithCallbacks(FilterCallbackReturnFalse, NULL, temp_dir.path());
+  }
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
+}
+
+TEST(ExceptionHandlerTest, StackedHandlersUnhandledToBottom) {
+  AutoTempDir temp_dir;
+
+  const pid_t child = fork();
+  if (child == 0) {
+    ExceptionHandler bottom(MinidumpDescriptor(temp_dir.path()),
+                            NULL,
+                            DoneCallbackRaiseSIGKILL,
+                            NULL,
+                            true,
+                            -1);
+    CrashWithCallbacks(NULL, DoneCallbackReturnFalse, temp_dir.path());
+  }
+  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
 }
 
 // Test that memory around the instruction pointer is written
@@ -253,7 +465,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemory) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
 
   // Read the minidump. Locate the exception record and the
   // memory list, and then ensure that there is a memory region
@@ -266,26 +478,13 @@ TEST(ExceptionHandlerTest, InstructionPointerMemory) {
   MinidumpMemoryList* memory_list = minidump.GetMemoryList();
   ASSERT_TRUE(exception);
   ASSERT_TRUE(memory_list);
-  ASSERT_LT(0, memory_list->region_count());
+  ASSERT_LT(0U, memory_list->region_count());
 
   MinidumpContext* context = exception->GetContext();
   ASSERT_TRUE(context);
 
   u_int64_t instruction_pointer;
-  switch (context->GetContextCPU()) {
-  case MD_CONTEXT_X86:
-    instruction_pointer = context->GetContextX86()->eip;
-    break;
-  case MD_CONTEXT_AMD64:
-    instruction_pointer = context->GetContextAMD64()->rip;
-    break;
-  case MD_CONTEXT_ARM:
-    instruction_pointer = context->GetContextARM()->iregs[15];
-    break;
-  default:
-    FAIL() << "Unknown context CPU: " << context->GetContextCPU();
-    break;
-  }
+  ASSERT_TRUE(context->GetInstructionPointer(&instruction_pointer));
 
   MinidumpMemoryRegion* region =
       memory_list->GetMemoryRegionForAddress(instruction_pointer);
@@ -358,7 +557,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMinBound) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
 
   // Read the minidump. Locate the exception record and the
   // memory list, and then ensure that there is a memory region
@@ -371,26 +570,13 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMinBound) {
   MinidumpMemoryList* memory_list = minidump.GetMemoryList();
   ASSERT_TRUE(exception);
   ASSERT_TRUE(memory_list);
-  ASSERT_LT(0, memory_list->region_count());
+  ASSERT_LT(0U, memory_list->region_count());
 
   MinidumpContext* context = exception->GetContext();
   ASSERT_TRUE(context);
 
   u_int64_t instruction_pointer;
-  switch (context->GetContextCPU()) {
-  case MD_CONTEXT_X86:
-    instruction_pointer = context->GetContextX86()->eip;
-    break;
-  case MD_CONTEXT_AMD64:
-    instruction_pointer = context->GetContextAMD64()->rip;
-    break;
-  case MD_CONTEXT_ARM:
-    instruction_pointer = context->GetContextARM()->iregs[15];
-    break;
-  default:
-    FAIL() << "Unknown context CPU: " << context->GetContextCPU();
-    break;
-  }
+  ASSERT_TRUE(context->GetInstructionPointer(&instruction_pointer));
 
   MinidumpMemoryRegion* region =
       memory_list->GetMemoryRegionForAddress(instruction_pointer);
@@ -462,7 +648,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMaxBound) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
 
   // Read the minidump. Locate the exception record and the memory list, and
   // then ensure that there is a memory region in the memory list that covers
@@ -474,26 +660,13 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMaxBound) {
   MinidumpMemoryList* memory_list = minidump.GetMemoryList();
   ASSERT_TRUE(exception);
   ASSERT_TRUE(memory_list);
-  ASSERT_LT(0, memory_list->region_count());
+  ASSERT_LT(0U, memory_list->region_count());
 
   MinidumpContext* context = exception->GetContext();
   ASSERT_TRUE(context);
 
   u_int64_t instruction_pointer;
-  switch (context->GetContextCPU()) {
-  case MD_CONTEXT_X86:
-    instruction_pointer = context->GetContextX86()->eip;
-    break;
-  case MD_CONTEXT_AMD64:
-    instruction_pointer = context->GetContextAMD64()->rip;
-    break;
-  case MD_CONTEXT_ARM:
-    instruction_pointer = context->GetContextARM()->iregs[15];
-    break;
-  default:
-    FAIL() << "Unknown context CPU: " << context->GetContextCPU();
-    break;
-  }
+  ASSERT_TRUE(context->GetInstructionPointer(&instruction_pointer));
 
   MinidumpMemoryRegion* region =
       memory_list->GetMemoryRegionForAddress(instruction_pointer);
@@ -546,7 +719,7 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryNullPointer) {
 
   struct stat st;
   ASSERT_EQ(0, stat(minidump_path.c_str(), &st));
-  ASSERT_GT(st.st_size, 0u);
+  ASSERT_GT(st.st_size, 0);
 
   // Read the minidump. Locate the exception record and the
   // memory list, and then ensure that there is a memory region
@@ -714,7 +887,7 @@ TEST(ExceptionHandlerTest, ExternalDumper) {
   msg.msg_controllen = kControlMsgSize;
 
   const ssize_t n = HANDLE_EINTR(recvmsg(fds[0], &msg, 0));
-  ASSERT_EQ(kCrashContextSize, n);
+  ASSERT_EQ(static_cast<ssize_t>(kCrashContextSize), n);
   ASSERT_EQ(kControlMsgSize, msg.msg_controllen);
   ASSERT_EQ(0, msg.msg_flags);
   ASSERT_EQ(0, close(fds[0]));
@@ -745,20 +918,39 @@ TEST(ExceptionHandlerTest, ExternalDumper) {
   ASSERT_TRUE(WriteMinidump(templ.c_str(), crashing_pid, context,
                             kCrashContextSize));
   static const char b = 0;
-  ASSERT_EQ(1U, (HANDLE_EINTR(write(signal_fd, &b, 1))));
+  ASSERT_EQ(1, (HANDLE_EINTR(write(signal_fd, &b, 1))));
   ASSERT_EQ(0, close(signal_fd));
 
   ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
 
   struct stat st;
   ASSERT_EQ(0, stat(templ.c_str(), &st));
-  ASSERT_GT(st.st_size, 0U);
+  ASSERT_GT(st.st_size, 0);
   unlink(templ.c_str());
+}
+
+TEST(ExceptionHandlerTest, WriteMinidumpExceptionStream) {
+  AutoTempDir temp_dir;
+  ExceptionHandler handler(MinidumpDescriptor(temp_dir.path()), NULL, NULL,
+                           NULL, false, -1);
+  ASSERT_TRUE(handler.WriteMinidump());
+
+  string minidump_path = handler.minidump_descriptor().path();
+
+  // Read the minidump and check the exception stream.
+  Minidump minidump(minidump_path);
+  ASSERT_TRUE(minidump.Read());
+  MinidumpException* exception = minidump.GetException();
+  ASSERT_TRUE(exception);
+  const MDRawExceptionStream* raw = exception->exception();
+  ASSERT_TRUE(raw);
+  EXPECT_EQ(MD_EXCEPTION_CODE_LIN_DUMP_REQUESTED,
+            raw->exception_record.exception_code);
 }
 
 TEST(ExceptionHandlerTest, GenerateMultipleDumpsWithFD) {
   AutoTempDir temp_dir;
-  std::string path;
+  string path;
   const int fd = CreateTMPFile(temp_dir.path(), &path);
   ExceptionHandler handler(MinidumpDescriptor(fd), NULL, NULL, NULL, false, -1);
   ASSERT_TRUE(handler.WriteMinidump());
@@ -782,8 +974,8 @@ TEST(ExceptionHandlerTest, GenerateMultipleDumpsWithPath) {
   const MinidumpDescriptor& minidump_1 = handler.minidump_descriptor();
   struct stat st;
   ASSERT_EQ(0, stat(minidump_1.path(), &st));
-  ASSERT_GT(st.st_size, 0U);
-  std::string minidump_1_path(minidump_1.path());
+  ASSERT_GT(st.st_size, 0);
+  string minidump_1_path(minidump_1.path());
   // Check it is a valid minidump.
   Minidump minidump1(minidump_1_path);
   ASSERT_TRUE(minidump1.Read());
@@ -793,13 +985,139 @@ TEST(ExceptionHandlerTest, GenerateMultipleDumpsWithPath) {
   ASSERT_TRUE(handler.WriteMinidump());
   const MinidumpDescriptor& minidump_2 = handler.minidump_descriptor();
   ASSERT_EQ(0, stat(minidump_2.path(), &st));
-  ASSERT_GT(st.st_size, 0U);
-  std::string minidump_2_path(minidump_2.path());
+  ASSERT_GT(st.st_size, 0);
+  string minidump_2_path(minidump_2.path());
   // Check it is a valid minidump.
   Minidump minidump2(minidump_2_path);
   ASSERT_TRUE(minidump2.Read());
   unlink(minidump_2.path());
 
-  // We expect 2 distinct files.
+  // 2 distinct files should be produced.
   ASSERT_STRNE(minidump_1_path.c_str(), minidump_2_path.c_str());
+}
+
+// Test that an additional memory region can be added to the minidump.
+TEST(ExceptionHandlerTest, AdditionalMemory) {
+  const u_int32_t kMemorySize = sysconf(_SC_PAGESIZE);
+
+  // Get some heap memory.
+  u_int8_t* memory = new u_int8_t[kMemorySize];
+  const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
+  ASSERT_TRUE(memory);
+
+  // Stick some data into the memory so the contents can be verified.
+  for (u_int32_t i = 0; i < kMemorySize; ++i) {
+    memory[i] = i % 255;
+  }
+
+  AutoTempDir temp_dir;
+  ExceptionHandler handler(
+      MinidumpDescriptor(temp_dir.path()), NULL, NULL, NULL, true, -1);
+
+  // Add the memory region to the list of memory to be included.
+  handler.RegisterAppMemory(memory, kMemorySize);
+  handler.WriteMinidump();
+
+  const MinidumpDescriptor& minidump_desc = handler.minidump_descriptor();
+
+  // Read the minidump. Ensure that the memory region is present
+  Minidump minidump(minidump_desc.path());
+  ASSERT_TRUE(minidump.Read());
+
+  MinidumpMemoryList* dump_memory_list = minidump.GetMemoryList();
+  ASSERT_TRUE(dump_memory_list);
+  const MinidumpMemoryRegion* region =
+    dump_memory_list->GetMemoryRegionForAddress(kMemoryAddress);
+  ASSERT_TRUE(region);
+
+  EXPECT_EQ(kMemoryAddress, region->GetBase());
+  EXPECT_EQ(kMemorySize, region->GetSize());
+
+  // Verify memory contents.
+  EXPECT_EQ(0, memcmp(region->GetMemory(), memory, kMemorySize));
+
+  delete[] memory;
+}
+
+// Test that a memory region that was previously registered
+// can be unregistered.
+TEST(ExceptionHandlerTest, AdditionalMemoryRemove) {
+  const u_int32_t kMemorySize = sysconf(_SC_PAGESIZE);
+
+  // Get some heap memory.
+  u_int8_t* memory = new u_int8_t[kMemorySize];
+  const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
+  ASSERT_TRUE(memory);
+
+  AutoTempDir temp_dir;
+  ExceptionHandler handler(
+      MinidumpDescriptor(temp_dir.path()), NULL, NULL, NULL, true, -1);
+
+  // Add the memory region to the list of memory to be included.
+  handler.RegisterAppMemory(memory, kMemorySize);
+
+  // ...and then remove it
+  handler.UnregisterAppMemory(memory);
+  handler.WriteMinidump();
+
+  const MinidumpDescriptor& minidump_desc = handler.minidump_descriptor();
+
+  // Read the minidump. Ensure that the memory region is not present.
+  Minidump minidump(minidump_desc.path());
+  ASSERT_TRUE(minidump.Read());
+
+  MinidumpMemoryList* dump_memory_list = minidump.GetMemoryList();
+  ASSERT_TRUE(dump_memory_list);
+  const MinidumpMemoryRegion* region =
+    dump_memory_list->GetMemoryRegionForAddress(kMemoryAddress);
+  EXPECT_FALSE(region);
+
+  delete[] memory;
+}
+
+static bool SimpleCallback(const MinidumpDescriptor& descriptor,
+                           void* context,
+                           bool succeeded) {
+  string* filename = reinterpret_cast<string*>(context);
+  *filename = descriptor.path();
+  return true;
+}
+
+TEST(ExceptionHandlerTest, WriteMinidumpForChild) {
+  int fds[2];
+  ASSERT_NE(-1, pipe(fds));
+
+  const pid_t child = fork();
+  if (child == 0) {
+    close(fds[1]);
+    char b;
+    HANDLE_EINTR(read(fds[0], &b, sizeof(b)));
+    close(fds[0]);
+    syscall(__NR_exit);
+  }
+  close(fds[0]);
+
+  AutoTempDir temp_dir;
+  string minidump_filename;
+  ASSERT_TRUE(
+    ExceptionHandler::WriteMinidumpForChild(child, child,
+                                            temp_dir.path(), SimpleCallback,
+                                            (void*)&minidump_filename));
+
+  Minidump minidump(minidump_filename);
+  ASSERT_TRUE(minidump.Read());
+  // Check that the crashing thread is the main thread of |child|
+  MinidumpException* exception = minidump.GetException();
+  ASSERT_TRUE(exception);
+  u_int32_t thread_id;
+  ASSERT_TRUE(exception->GetThreadID(&thread_id));
+  EXPECT_EQ(child, static_cast<int32_t>(thread_id));
+
+  const MDRawExceptionStream* raw = exception->exception();
+  ASSERT_TRUE(raw);
+  EXPECT_EQ(MD_EXCEPTION_CODE_LIN_DUMP_REQUESTED,
+            raw->exception_record.exception_code);
+
+  close(fds[1]);
+  unlink(minidump_filename.c_str());
 }

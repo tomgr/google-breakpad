@@ -31,6 +31,7 @@
 #define CLIENT_LINUX_MINIDUMP_WRITER_MINIDUMP_WRITER_H_
 
 #include <stdint.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <list>
@@ -51,6 +52,22 @@ struct MappingEntry {
 // A list of <MappingInfo, GUID>
 typedef std::list<MappingEntry> MappingList;
 
+// These entries store a list of memory regions that the client wants included
+// in the minidump.
+struct AppMemory {
+  void* ptr;
+  size_t length;
+
+  bool operator==(const struct AppMemory& other) const {
+    return ptr == other.ptr;
+  }
+
+  bool operator==(const void* other) const {
+    return ptr == other;
+  }
+};
+typedef std::list<AppMemory> AppMemoryList;
+
 // Writes a minidump to the filesystem. These functions do not malloc nor use
 // libc functions which may. Thus, it can be used in contexts where the state
 // of the heap may be corrupt.
@@ -67,16 +84,40 @@ bool WriteMinidump(const char* minidump_path, pid_t crashing_process,
 bool WriteMinidump(int minidump_fd, pid_t crashing_process,
                    const void* blob, size_t blob_size);
 
-// These overloads also allow passing a list of known mappings.
+// Alternate form of WriteMinidump() that works with processes that
+// are not expected to have crashed.  If |process_blamed_thread| is
+// meaningful, it will be the one from which a crash signature is
+// extracted.  It is not expected that this function will be called
+// from a compromised context, but it is safe to do so.
+bool WriteMinidump(const char* minidump_path, pid_t process,
+                   pid_t process_blamed_thread);
+
+// These overloads also allow passing a list of known mappings and
+// a list of additional memory regions to be included in the minidump.
 bool WriteMinidump(const char* minidump_path, pid_t crashing_process,
                    const void* blob, size_t blob_size,
-                   const MappingList& mappings);
+                   const MappingList& mappings,
+                   const AppMemoryList& appdata);
 bool WriteMinidump(int minidump_fd, pid_t crashing_process,
                    const void* blob, size_t blob_size,
-                   const MappingList& mappings);
+                   const MappingList& mappings,
+                   const AppMemoryList& appdata);
+
+// These overloads also allow passing a file size limit for the minidump.
+bool WriteMinidump(const char* minidump_path, off_t minidump_size_limit,
+                   pid_t crashing_process,
+                   const void* blob, size_t blob_size,
+                   const MappingList& mappings,
+                   const AppMemoryList& appdata);
+bool WriteMinidump(int minidump_fd, off_t minidump_size_limit,
+                   pid_t crashing_process,
+                   const void* blob, size_t blob_size,
+                   const MappingList& mappings,
+                   const AppMemoryList& appdata);
 
 bool WriteMinidump(const char* filename,
                    const MappingList& mappings,
+                   const AppMemoryList& appdata,
                    LinuxDumper* dumper);
 
 }  // namespace google_breakpad
