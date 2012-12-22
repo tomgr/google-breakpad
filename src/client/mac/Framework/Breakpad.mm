@@ -521,11 +521,11 @@ bool Breakpad::ExtractParameters(NSDictionary *parameters) {
   }
 
   // Verify that there is a Reporter application.
-  if (![[NSFileManager defaultManager]
-             fileExistsAtPath:reporterPathString]) {
-    DEBUGLOG(stderr, "Cannot find Reporter tool\n");
-    return false;
-  }
+  // if (![[NSFileManager defaultManager]
+  //            fileExistsAtPath:reporterPathString]) {
+  //   DEBUGLOG(stderr, "Cannot find Reporter tool\n");
+  //   return false;
+  // }
 
   if (!dumpSubdirectory) {
     dumpSubdirectory = @"";
