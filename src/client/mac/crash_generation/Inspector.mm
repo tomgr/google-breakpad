@@ -323,7 +323,7 @@ bool Inspector::InspectTask() {
            [minidumpPath UTF8String]);
 
 
-  config_file_.WriteFile( 0,
+  config_file_.WriteFile( minidumpDirectory,
                           &config_params_,
                           minidumpLocation.GetPath(),
                           minidumpLocation.GetID());
